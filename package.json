@@ -2,7 +2,7 @@
   "name": "trustlens",
   "displayName": "Trust Lens",
   "description": "Lightweight trust report for installed VS Code extensions.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "AdrianTriS",
   "icon": "media/icon.png",
   "license": "MIT",
@@ -31,7 +31,10 @@
     "onView:trustLensReport",
     "onCommand:trustLens.refresh",
     "onCommand:trustLens.disable",
-    "onCommand:trustLens.uninstall"
+    "onCommand:trustLens.uninstall",
+    "onCommand:trustLens.exportJson",
+    "onCommand:trustLens.exportCsv",
+    "onCommand:trustLens.openDetails"
   ],
   "main": "./extension.js",
   "contributes": {
@@ -64,12 +67,34 @@
       {
         "command": "trustLens.uninstall",
         "title": "Trust Lens: Uninstall Extension"
+      },
+      {
+        "command": "trustLens.openDetails",
+        "title": "Trust Lens: Open Extension Details"
+      },
+      {
+        "command": "trustLens.exportJson",
+        "title": "Trust Lens: Export Report (JSON)"
+      },
+      {
+        "command": "trustLens.exportCsv",
+        "title": "Trust Lens: Export Report (CSV)"
       }
     ],
     "menus": {
       "view/title": [
         {
           "command": "trustLens.refresh",
+          "when": "view == trustLensReport",
+          "group": "navigation"
+        },
+        {
+          "command": "trustLens.exportJson",
+          "when": "view == trustLensReport",
+          "group": "navigation"
+        },
+        {
+          "command": "trustLens.exportCsv",
           "when": "view == trustLensReport",
           "group": "navigation"
         }
@@ -82,6 +107,11 @@
         },
         {
           "command": "trustLens.uninstall",
+          "when": "view == trustLensReport && viewItem == trustLens.extension",
+          "group": "navigation"
+        },
+        {
+          "command": "trustLens.openDetails",
           "when": "view == trustLensReport && viewItem == trustLens.extension",
           "group": "navigation"
         }

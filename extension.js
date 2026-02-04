@@ -1,10 +1,19 @@
 const vscode = require('vscode');
+const path = require('path');
 
 const RISK = {
   LOW: 'low',
   MEDIUM: 'medium',
   HIGH: 'high'
 };
+
+const RISK_ORDER = {
+  [RISK.HIGH]: 0,
+  [RISK.MEDIUM]: 1,
+  [RISK.LOW]: 2
+};
+
+const DEFAULT_EXPORT_NAME = 'trustlens-report';
 
 function normalizeArray(value) {
   if (!value) {
@@ -39,16 +48,44 @@ function assessRisk(extension) {
     reasons.push('Activates on startup');
   }
 
+  if (activationEvents.some((evt) => evt.startsWith('workspaceContains'))) {
+    score += 1;
+    reasons.push('Activates when workspace contains matching files');
+  }
+
   const runsInWorkspace = kinds.includes('workspace') || kinds.length === 0;
   if (runsInWorkspace) {
     score += 2;
     reasons.push('Runs in workspace (filesystem access)');
   }
 
+  const runsInUI = kinds.includes('ui');
+  if (runsInUI && !runsInWorkspace) {
+    score -= 1;
+    reasons.push('Runs in UI only (lower filesystem exposure)');
+  }
+
   if (pkg.main && runsInWorkspace) {
     score += 1;
     reasons.push('Runs Node.js extension host code');
   }
+
+  if (pkg.browser) {
+    score += 1;
+    reasons.push('Runs web extension code');
+  }
+
+  if (pkg.enableProposedApi) {
+    score += 1;
+    reasons.push('Uses proposed API');
+  }
+
+  if (pkg.capabilities && pkg.capabilities.untrustedWorkspaces && pkg.capabilities.untrustedWorkspaces.supported) {
+    score += 1;
+    reasons.push('Runs in untrusted workspaces');
+  }
+
+  score = Math.max(0, score);
 
   let level = RISK.LOW;
   if (score >= 5) {
@@ -80,6 +117,66 @@ function riskIcon(level) {
   return new vscode.ThemeIcon('check');
 }
 
+function buildReportItem(extension, assessment) {
+  const pkg = extension.packageJSON || {};
+  const publisher = pkg.publisher || extension.id.split('.')[0];
+  const name = pkg.name || extension.id.split('.')[1] || extension.id;
+  const kind = normalizeArray(pkg.extensionKind || []);
+  const activationEvents = normalizeArray(pkg.activationEvents || []);
+  const contributes = pkg.contributes ? Object.keys(pkg.contributes) : [];
+
+  return {
+    id: extension.id,
+    name: pkg.displayName || name,
+    publisher,
+    version: pkg.version || 'unknown',
+    description: pkg.description || '',
+    extensionKind: kind,
+    activationEvents,
+    contributes,
+    risk: assessment.level,
+    score: assessment.score,
+    reasons: assessment.reasons
+  };
+}
+
+function toCsv(rows) {
+  const header = [
+    'id',
+    'name',
+    'publisher',
+    'version',
+    'risk',
+    'score',
+    'reasons'
+  ];
+  const lines = [header.join(',')];
+  rows.forEach((row) => {
+    const values = [
+      row.id,
+      row.name,
+      row.publisher,
+      row.version,
+      row.risk,
+      String(row.score),
+      row.reasons.join('; ')
+    ].map((value) => `"${String(value).replace(/"/g, '""')}"`);
+    lines.push(values.join(','));
+  });
+  return lines.join('\n');
+}
+
+class SummaryItem extends vscode.TreeItem {
+  constructor(label, description, icon) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.description = description;
+    this.contextValue = 'trustLens.summary';
+    if (icon) {
+      this.iconPath = icon;
+    }
+  }
+}
+
 class ExtensionItem extends vscode.TreeItem {
   constructor(extension, assessment) {
     super(extension.packageJSON.displayName || extension.packageJSON.name || extension.id, vscode.TreeItemCollapsibleState.None);
@@ -93,6 +190,7 @@ class ExtensionItem extends vscode.TreeItem {
 
     const lines = [];
     lines.push(`Risk: ${riskLabel(assessment.level)}`);
+    lines.push(`Score: ${assessment.score}`);
     lines.push(`Version: ${extension.packageJSON.version || 'unknown'}`);
     lines.push(`ID: ${extension.id}`);
     if (assessment.reasons.length) {
@@ -126,8 +224,7 @@ class TrustLensProvider {
         assessment: assessRisk(ext)
       }))
       .sort((a, b) => {
-        const order = { high: 0, medium: 1, low: 2 };
-        const diff = order[a.assessment.level] - order[b.assessment.level];
+        const diff = RISK_ORDER[a.assessment.level] - RISK_ORDER[b.assessment.level];
         if (diff !== 0) {
           return diff;
         }
@@ -140,7 +237,21 @@ class TrustLensProvider {
       return [new vscode.TreeItem('No extensions found.')];
     }
 
-    return extensions.map((item) => new ExtensionItem(item.extension, item.assessment));
+    const counts = extensions.reduce(
+      (acc, item) => {
+        acc[item.assessment.level] += 1;
+        return acc;
+      },
+      { high: 0, medium: 0, low: 0 }
+    );
+
+    const summary = [
+      new SummaryItem('High Risk', `${counts.high} extension(s)`, riskIcon(RISK.HIGH)),
+      new SummaryItem('Medium Risk', `${counts.medium} extension(s)`, riskIcon(RISK.MEDIUM)),
+      new SummaryItem('Low Risk', `${counts.low} extension(s)`, riskIcon(RISK.LOW))
+    ];
+
+    return summary.concat(extensions.map((item) => new ExtensionItem(item.extension, item.assessment)));
   }
 }
 
@@ -158,6 +269,48 @@ async function uninstallExtension(item) {
   await vscode.commands.executeCommand('workbench.extensions.uninstallExtension', item.extension.id);
 }
 
+async function openExtensionDetails(item) {
+  if (!item || !item.extension) {
+    return;
+  }
+  await vscode.commands.executeCommand('workbench.extensions.openExtensionDetails', item.extension.id);
+}
+
+async function exportReport(format) {
+  const extensions = vscode.extensions.all
+    .filter((ext) => !ext.packageJSON.isBuiltin)
+    .map((ext) => ({
+      extension: ext,
+      assessment: assessRisk(ext)
+    }))
+    .sort((a, b) => RISK_ORDER[a.assessment.level] - RISK_ORDER[b.assessment.level]);
+
+  const rows = extensions.map((item) => buildReportItem(item.extension, item.assessment));
+  const suggestedName = `${DEFAULT_EXPORT_NAME}.${format}`;
+  const workspace = vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders[0];
+  const defaultUri = workspace
+    ? vscode.Uri.joinPath(workspace.uri, suggestedName)
+    : vscode.Uri.file(path.join(process.cwd(), suggestedName));
+
+  const uri = await vscode.window.showSaveDialog({
+    defaultUri,
+    saveLabel: `Export ${format.toUpperCase()}`
+  });
+  if (!uri) {
+    return;
+  }
+
+  let contents = '';
+  if (format === 'json') {
+    contents = JSON.stringify({ generatedAt: new Date().toISOString(), extensions: rows }, null, 2);
+  } else {
+    contents = toCsv(rows);
+  }
+
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(contents, 'utf8'));
+  vscode.window.showInformationMessage(`Trust Lens report saved: ${uri.fsPath}`);
+}
+
 function activate(context) {
   const provider = new TrustLensProvider();
 
@@ -165,7 +318,10 @@ function activate(context) {
     vscode.window.registerTreeDataProvider('trustLensReport', provider),
     vscode.commands.registerCommand('trustLens.refresh', () => provider.refresh()),
     vscode.commands.registerCommand('trustLens.disable', (item) => disableExtension(item)),
-    vscode.commands.registerCommand('trustLens.uninstall', (item) => uninstallExtension(item))
+    vscode.commands.registerCommand('trustLens.uninstall', (item) => uninstallExtension(item)),
+    vscode.commands.registerCommand('trustLens.openDetails', (item) => openExtensionDetails(item)),
+    vscode.commands.registerCommand('trustLens.exportJson', () => exportReport('json')),
+    vscode.commands.registerCommand('trustLens.exportCsv', () => exportReport('csv'))
   );
 }
 
