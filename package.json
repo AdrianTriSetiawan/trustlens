@@ -1,0 +1,91 @@
+{
+  "name": "trustlens",
+  "displayName": "Trust Lens",
+  "description": "Lightweight trust report for installed VS Code extensions.",
+  "version": "0.1.0",
+  "publisher": "AdrianTriS",
+  "icon": "media/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AdrianTriSetiawan/trustlens.git"
+  },
+  "bugs": {
+    "url": "https://github.com/AdrianTriSetiawan/trustlens/issues"
+  },
+  "homepage": "https://github.com/AdrianTriSetiawan/trustlens#readme",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "security",
+    "extensions",
+    "risk",
+    "audit",
+    "trust"
+  ],
+  "activationEvents": [
+    "onView:trustLensReport",
+    "onCommand:trustLens.refresh",
+    "onCommand:trustLens.disable",
+    "onCommand:trustLens.uninstall"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "trustLens",
+          "title": "Trust Lens",
+          "icon": "media/activitybar.svg"
+        }
+      ]
+    },
+    "views": {
+      "trustLens": [
+        {
+          "id": "trustLensReport",
+          "name": "Extension Trust Report"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "trustLens.refresh",
+        "title": "Trust Lens: Refresh"
+      },
+      {
+        "command": "trustLens.disable",
+        "title": "Trust Lens: Disable Extension"
+      },
+      {
+        "command": "trustLens.uninstall",
+        "title": "Trust Lens: Uninstall Extension"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "trustLens.refresh",
+          "when": "view == trustLensReport",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "trustLens.disable",
+          "when": "view == trustLensReport && viewItem == trustLens.extension",
+          "group": "inline"
+        },
+        {
+          "command": "trustLens.uninstall",
+          "when": "view == trustLensReport && viewItem == trustLens.extension",
+          "group": "navigation"
+        }
+      ]
+    }
+  }
+}
