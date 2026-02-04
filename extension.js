@@ -166,6 +166,22 @@ function toCsv(rows) {
   return lines.join('\n');
 }
 
+function toMarkdown(rows) {
+  const header = ['Name', 'Publisher', 'Version', 'Risk', 'Score', 'Reasons'];
+  const sep = ['---', '---', '---', '---', '---', '---'];
+  const lines = [];
+  lines.push(`# Trust Lens Report`);
+  lines.push('');
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push('');
+  lines.push(`| ${header.join(' | ')} |`);
+  lines.push(`| ${sep.join(' | ')} |`);
+  rows.forEach((row) => {
+    const reasons = row.reasons.join('; ');
+    lines.push(`| ${row.name} | ${row.publisher} | ${row.version} | ${row.risk} | ${row.score} | ${reasons} |`);
+  });
+  return lines.join('\n');
+}
 class SummaryItem extends vscode.TreeItem {
   constructor(label, description, icon) {
     super(label, vscode.TreeItemCollapsibleState.None);
@@ -301,11 +317,7 @@ async function exportReport(format) {
   }
 
   let contents = '';
-  if (format === 'json') {
-    contents = JSON.stringify({ generatedAt: new Date().toISOString(), extensions: rows }, null, 2);
-  } else {
-    contents = toCsv(rows);
-  }
+  if (format === 'json') {\n    contents = JSON.stringify({ generatedAt: new Date().toISOString(), extensions: rows }, null, 2);\n  } else if (format === 'markdown') {\n    contents = toMarkdown(rows);\n  } else {\n    contents = toCsv(rows);\n  }
 
   await vscode.workspace.fs.writeFile(uri, Buffer.from(contents, 'utf8'));
   vscode.window.showInformationMessage(`Trust Lens report saved: ${uri.fsPath}`);
@@ -321,7 +333,8 @@ function activate(context) {
     vscode.commands.registerCommand('trustLens.uninstall', (item) => uninstallExtension(item)),
     vscode.commands.registerCommand('trustLens.openDetails', (item) => openExtensionDetails(item)),
     vscode.commands.registerCommand('trustLens.exportJson', () => exportReport('json')),
-    vscode.commands.registerCommand('trustLens.exportCsv', () => exportReport('csv'))
+    vscode.commands.registerCommand('trustLens.exportCsv', () => exportReport('csv')),
+    vscode.commands.registerCommand('trustLens.exportMarkdown', () => exportReport('markdown'))
   );
 }
 

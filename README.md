@@ -6,7 +6,7 @@ Lightweight trust report for installed VS Code extensions.
 - Scan installed extensions and show a risk level
 - Risk heuristics: startup activation, workspace access, Node.js host
 - Quick actions: disable or uninstall
-- Export report to JSON or CSV
+- Export report to JSON, CSV, or Markdown
 
 ## Notes
 Risk assessment is heuristic. It does **not** guarantee safety.
